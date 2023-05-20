@@ -134,15 +134,20 @@ async function main() {
           const response = JSON.parse(data);
 
           if (response.hits.length > 0) {
-            console.log(mod + ' ' + 'https://api.modrinth.com/v2/search?limit=5&query=' + mod.replace('.jar', ''))
+            console.clear();
+            console.log(('Contacting API: [' + i + '/' + (mods.length - 1) + ']').green);
+            
             finishedModCheck.ableToSearch.push(mod + ' ' + 'https://api.modrinth.com/v2/search?limit=5&query=' + mod.replace('.jar', ''))
 
             try {
               const ResponseData = await fetch('https://api.modrinth.com/v2/version_file/' + mods[i][1]);
-              // Just see if this fetch returns anything, if it does then we know it (atleast) matches.
-              finishedModCheck.valid.push(mods[i][0] + " (" + ResponseData["filename"] + ")");
+              if(ResponseData) {
+                finishedModCheck.valid.push(mods[i][0] + " (" + ResponseData["filename"] + ")");
+              } else {
+                finishedModCheck.potentialRat.push(mods[i][0]);
+              }
             } catch (error) {
-              finishedModCheck.potentialRat.push(mods[i][0]);
+              
             }
           } else {
             finishedModCheck.unableToSearch.push(mods[i][0]);
@@ -176,8 +181,6 @@ async function main() {
     console.log('Saving files...');
     fs.writeFileSync('res(LIGHT)-diagnostic.diagnostic', logs.join('\n'));
     fs.writeFileSync('res(HEAVY)-diagnostic.diagnostic', logsbs64.join('\n'));
-
-    console.log('Press any key to continue...');
 
     process.exit(0);
   }
