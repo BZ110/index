@@ -4,17 +4,6 @@ const fs = require('fs');
 const hash = require('hash.js');
 const https = require('https');
 
-    // I only programmed mod checking because to be honest after my demotion
-    // i've been really not focusing on this. This was going to be a multipurpose
-    // screensharing tool for almost all clients. 
-    //
-    // Sad. :(
-    //
-
-    // I spent like 4 hours on this, but what made me spend the most time was testing and learning the API.
-    // Just learning the Modrinth API added like 3 extra hours. (4 + 3)
-
-
 const logs = [];
 const logsbs64 = [];
 const mods = [];
@@ -62,21 +51,6 @@ async function lookForMC(x) {
     case 'mods':
       return await ifValid(process.env.APPDATA + '/.minecraft/mods');
 
-      // Only case 'mods' is used, you can delete the rest.
-    case 'feather-mods':
-      return await ifValid(process.env.APPDATA + '/.minecraft/feather-mods');
-    case 'fabric':
-      return await ifValid(process.env.APPDATA + '/.minecraft/.fabric');
-    case 'fabric/processedMods':
-      return await ifValid(process.env.APPDATA + '/.minecraft/.fabric/processedMods');
-    case 'fabric/remappedJars':
-      return await ifValid(process.env.APPDATA + '/.minecraft/.fabric/remappedJars');
-    case 'optifine':
-      if (await ifValid(process.env.APPDATA + '/.minecraft/.optifine')) {
-        const files = await fs.promises.readdir(process.env.APPDATA + '/.minecraft/.optifine');
-        return [true, files];
-      }
-      return [false, undefined];
     default:
       return await ifValid(process.env.APPDATA + '/.minecraft');
   }
@@ -107,10 +81,10 @@ async function main() {
         logs.push('Found ' + files.length + ' items (/.minecraft/mods directory)');
 
         for (let i = 0; i < files.length; i++) {
-          const sha1Hash = hash.sha1().update(fs.readFileSync(process.env.APPDATA + '/.minecraft/mods/' + files[i])).digest('hex');
+          const sha512Hash = hash.sha512().update(fs.readFileSync(process.env.APPDATA + '/.minecraft/mods/' + files[i])).digest('hex');
           const file = files[i];
-          mods.push([file, sha1Hash]);
-          logs.push(sha1Hash + ' ' + file);
+          mods.push([file, sha512Hash]);
+          logs.push(sha512Hash + ' ' + file);
           logsbs64.push('File Name: ' + file);
           logsbs64.push('  ' + Buffer.from(fs.readFileSync(process.env.APPDATA + '/.minecraft/mods/' + file)).toString('base64'));
           console.clear();
@@ -124,7 +98,7 @@ async function main() {
       }
     }
 
-    logs.push('--- START OF MOD ANALYSIS ---');
+    logs.push('\n--- START OF RESULT OF MOD ANALYSIS ---');
 
     for (let i = 0; i < mods.length; i++) {
       const mod = mods[i][0];
@@ -133,21 +107,22 @@ async function main() {
           const data = await fetch('https://api.modrinth.com/v2/search?limit=5&query=' + mod.replace('.jar', ''));
           const response = JSON.parse(data);
 
-          if (response.hits.length > 0) {
+          if (response["hits"].length > 0) {
             console.clear();
             console.log(('Contacting API: [' + i + '/' + (mods.length - 1) + ']').green);
             
             finishedModCheck.ableToSearch.push(mod + ' ' + 'https://api.modrinth.com/v2/search?limit=5&query=' + mod.replace('.jar', ''))
 
             try {
-              const ResponseData = await fetch('https://api.modrinth.com/v2/version_file/' + mods[i][1]);
-              if(ResponseData) {
-                finishedModCheck.valid.push(mods[i][0] + " (" + ResponseData["filename"] + ")");
+              const ResponseData = JSON.parse(await fetch('https://api.modrinth.com/v2/version_file/' + mods[i][1] + "?algorithm=sha512"));
+              if(ResponseData["id"].length > 0) {
+                finishedModCheck.valid.push(mods[i][0] + " (identified as " + ResponseData["files"][0]["filename"] + " on the server)");
+                
               } else {
                 finishedModCheck.potentialRat.push(mods[i][0]);
               }
             } catch (error) {
-              
+              finishedModCheck.potentialRat.push(mods[i][0]);
             }
           } else {
             finishedModCheck.unableToSearch.push(mods[i][0]);
@@ -157,24 +132,20 @@ async function main() {
         }
       }
     }
-    logs.push('\n--- END OF MOD ANALYSIS ---\n\n');
-    logs.push("--- START OF RESULT OF MOD ANALYSIS ---")
-    logs.push("\n")
     for(let i = 0; i < finishedModCheck.valid.length; i++) {
       logs.push("Valid: " + finishedModCheck.valid[i])
     }
-    logs.push("\n")
+    logs.push("")
     for(let i = 0; i < finishedModCheck.potentialRat.length; i++) {
-      logs.push("Unable to search (search manually to see if it's a masked hack client) [modrinth had results (may be innacurate), but the file was not found on their server.]: " + finishedModCheck.potentialRat[i])
+      logs.push("Unable to search (search manually to see if it's a masked hack client) [Found Mod with similar name in API, but different hash]: " + finishedModCheck.potentialRat[i])
     }
     for(let i = 0; i < finishedModCheck.unableToSearch.length; i++) {
-      logs.push("Unable to search (search manually to see if it's a masked hack client) [modrinth turned no results so it may be a customized mod]: " + finishedModCheck.unableToSearch[i])
+      logs.push("Unable to search (search manually to see if it's a masked hack client) [Can't find mod in API]: " + finishedModCheck.unableToSearch[i])
     }
-    logs.push("\n")
-    logs.push("--- END OF RESULT OF MOD ANALYSIS ---")
-    logs.push("To do a manual comparison, you can use this website: https://emn178.github.io/online-tools/sha1_checksum.html")
+    logs.push("--- END OF RESULT OF MOD ANALYSIS ---\n")
+    logs.push("To do a manual comparison, you can use this website: https://emn178.github.io/online-tools/sha512_checksum.html")
     logs.push("This uses the search function in Modrinth to see if a mod might be masked.\nThis may give many false positives for seemingly no reason, so you should double check the mod if it does flag.")
-    logs.push("99% of the time it will flag as a potential RAT, but it is not. If it does, just for precaution, you should double check the mod.")
+    logs.push("Mods that are not found in the API must be manually reviewed.\nMods that are found on the API, but their hash is not found technically doesn't mean it's a ratted mod.\nYou should always just manually review all mods that aren't flagged as valid.\nMods that are flagged as valid but have a different identification name means hash collision, and those mods should be reverified too.")
     console.log('Press enter to continue...');
     promptsync('');
 
